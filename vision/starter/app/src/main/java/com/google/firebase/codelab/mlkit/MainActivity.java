@@ -22,6 +22,7 @@ import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
 import android.view.View;
@@ -30,6 +31,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.Spinner;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.tasks.Continuation;
@@ -122,6 +124,9 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
     /* Preallocated buffers for storing image data. */
     private final int[] intValues = new int[DIM_IMG_SIZE_X * DIM_IMG_SIZE_Y];
 
+    // Value to store found names in text search
+    private String found_names = "No Name Found";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -161,7 +166,7 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
         });
         Spinner dropdown = findViewById(R.id.spinner);
         String[] items = new String[]{"Test Image 1 (Text)", "Test Image 2 (Text)", "Test Image 3" +
-                " (Face)", "Test Image 4 (Object)", "Test Image 5 (Object)"};
+                " (Face)", "Test Image 4 (Object)", "Test Image 5 (Object)", "Test Image 6 (Text)"};
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout
                 .simple_spinner_dropdown_item, items);
         dropdown.setAdapter(adapter);
@@ -170,19 +175,110 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
     }
 
     private void runTextRecognition() {
-        // Replace with code from the codelab to run text recognition.
+        FirebaseVisionImage image = FirebaseVisionImage.fromBitmap(mSelectedImage);
+        FirebaseVisionTextRecognizer recognizer = FirebaseVision.getInstance()
+                .getOnDeviceTextRecognizer();
+        mTextButton.setEnabled(false);
+        recognizer.processImage(image)
+                .addOnSuccessListener(
+                        new OnSuccessListener<FirebaseVisionText>() {
+                            @Override
+                            public void onSuccess(FirebaseVisionText texts) {
+                                mTextButton.setEnabled(true);
+                                processTextRecognitionResult(texts);
+                            }
+                        })
+                .addOnFailureListener(
+                        new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                // Task failed with an exception
+                                mTextButton.setEnabled(true);
+                                e.printStackTrace();
+                            }
+                        });
     }
 
     private void processTextRecognitionResult(FirebaseVisionText texts) {
-        // Replace with code from the codelab to process the text recognition result.
+        List<FirebaseVisionText.TextBlock> blocks = texts.getTextBlocks();
+        if (blocks.size() == 0) {
+            showToast("No text found");
+            return;
+        }
+        Log.d("Boom", "in process text results");
+
+        // Set value of textview
+        //setContentView(R.layout.activity_main);
+        TextView textView = (TextView) findViewById(R.id.textViewName);
+        textView.setText("");
+
+        mGraphicOverlay.clear();
+        for (int i = 0; i < blocks.size(); i++) {
+            List<FirebaseVisionText.Line> lines = blocks.get(i).getLines();
+            for (int j = 0; j < lines.size(); j++) {
+                List<FirebaseVisionText.Element> elements = lines.get(j).getElements();
+//                Log.d("Results", lines.get(j).toString());
+                for (int k = 0; k < elements.size(); k++) {
+                    Graphic textGraphic = new TextGraphic(mGraphicOverlay, elements.get(k));
+                    mGraphicOverlay.add(textGraphic);
+                    Log.d("Results", elements.get(k).getText());
+                    if (elements.get(k).getText().contains("ARTHUR") || elements.get(k).getText().contains("AUTZ")) {
+                        //mGraphicOverlay.add(textGraphic);
+                        textView.append(elements.get(k).getText() + " ");
+
+                    }
+                }
+            }
+        }
+        if (TextUtils.isEmpty(textView.getText().toString())) {
+            textView.setText("No name found.");
+        }
+
     }
 
     private void runFaceContourDetection() {
-        // Replace with code from the codelab to run face contour detection.
+        FirebaseVisionImage image = FirebaseVisionImage.fromBitmap(mSelectedImage);
+        FirebaseVisionFaceDetectorOptions options =
+                new FirebaseVisionFaceDetectorOptions.Builder()
+                        .setPerformanceMode(FirebaseVisionFaceDetectorOptions.FAST)
+                        .setContourMode(FirebaseVisionFaceDetectorOptions.ALL_CONTOURS)
+                        .build();
+
+        mFaceButton.setEnabled(false);
+        FirebaseVisionFaceDetector detector = FirebaseVision.getInstance().getVisionFaceDetector(options);
+        detector.detectInImage(image)
+                .addOnSuccessListener(
+                        new OnSuccessListener<List<FirebaseVisionFace>>() {
+                            @Override
+                            public void onSuccess(List<FirebaseVisionFace> faces) {
+                                mFaceButton.setEnabled(true);
+                                processFaceContourDetectionResult(faces);
+                            }
+                        })
+                .addOnFailureListener(
+                        new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                // Task failed with an exception
+                                mFaceButton.setEnabled(true);
+                                e.printStackTrace();
+                            }
+                        });
     }
 
     private void processFaceContourDetectionResult(List<FirebaseVisionFace> faces) {
-        // Replace with code from the codelab to process the face contour detection result.
+        // Task completed successfully
+        if (faces.size() == 0) {
+            showToast("No face found");
+            return;
+        }
+        mGraphicOverlay.clear();
+        for (int i = 0; i < faces.size(); ++i) {
+            FirebaseVisionFace face = faces.get(i);
+            FaceContourGraphic faceGraphic = new FaceContourGraphic(mGraphicOverlay);
+            mGraphicOverlay.add(faceGraphic);
+            faceGraphic.updateFace(face);
+        }
     }
 
     private void initCustomModel() {
@@ -335,6 +431,9 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
             case 4:
                 // Whatever you want to happen when the thrid item gets selected
                 mSelectedImage = getBitmapFromAsset(this, "mountain.jpg");
+                break;
+            case 5:
+                mSelectedImage = getBitmapFromAsset(this, "shipping_tag2.jpg");
                 break;
         }
         if (mSelectedImage != null) {
